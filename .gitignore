@@ -12,6 +12,7 @@
 *.lai
 *.la
 *.a
+!*/libprogtest_solver.a
 *.lib
 
 *.exe
