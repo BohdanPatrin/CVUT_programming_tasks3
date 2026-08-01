@@ -12,6 +12,39 @@ This project is a high-performance, multithreaded C++ application designed to as
     *   **Transmitter Threads:** Safely queue and transmit processed results back to the interface without bottlenecking the workers.
 *   **Algorithmic Optimization:** Solves boolean prefix expressions to evaluate valid problem states. The computation algorithm is optimized to run within an $O(n^3)$ time complexity limit.
 
+## Code Highlight: Worker Thread Synchronization
+The worker threads utilize a consumer model, safely waiting for dynamically allocated `CMsgSerializer` tasks. This ensures zero CPU cycle waste (no busy-waiting) when the job queue is empty.
+
+```cpp
+void CSentinelHacker::workerLoop() {
+    while (true) {
+        std::shared_ptr<CMsgSerializer> myJob;
+
+        {
+            std::unique_lock<std::mutex> lock(mtx);
+
+            // Sleep safely until a job arrives or the system is stopping
+            cv_workers.wait(lock, [this]() {
+                return !jobQueue.empty() || isStopped;
+            });
+
+            // Clean exit condition
+            if (isStopped && jobQueue.empty())
+                return;
+
+            myJob = jobQueue.front().serializer;
+            jobQueue.front().threadsRemaining--;
+
+            if (jobQueue.front().threadsRemaining == 0)
+                jobQueue.pop();
+        }
+        
+        // Execute heavy computation outside the critical section
+        myJob->solve();
+    }
+}
+```
+
 ## System Architecture
 1.  **Fragment Reception:** `CReceiver` instances asynchronously deliver 64-bit fragments containing a message ID, fragment count, and payload.
 2.  **Assembly & Validation:** Fragments are grouped by ID. Once all fragments for a message arrive, they are validated and passed to a deserializer (`CMsgSerializer`).
@@ -23,3 +56,23 @@ This project is a high-performance, multithreaded C++ application designed to as
 *   **Concurrency:** `<thread>`, `<mutex>`, `<condition_variable>`
 *   **Build System:** Make
 *   **Environment:** Cross-platform (includes pre-compiled static libraries for Linux, macOS, and Windows/MinGW64)
+
+## How to Build and Run
+This project includes standard Makefiles for different environments. 
+
+**For Linux/macOS:**
+```bash
+make -f Makefile
+./test.out
+```
+
+**For Windows (MinGW64):**
+```bash
+mingw32-make -f Makefile.mingw
+test.exe
+```
+## Project Structure
+*   `solution.cpp` - Core implementation of the `CSentinelHacker` class, thread lifecycle management, and synchronization logic.
+*   `sample_tester.cpp` - The testing framework simulating the asynchronous network environment.
+*   `common.h` / `progtest_solver.h` - Interfaces and pre-defined structures for the testing environment.
+*   Architecture Folders (e.g., `i686-w64-mingw32`, `x86_64-linux-gnu`) - Contain the necessary `libprogtest_solver.a` static libraries for local compilation across different environments.
